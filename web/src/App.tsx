@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { Shell } from "./components/Shell";
-import { DemoPanel } from "./components/DemoPanel";
 import { RecorderPanel } from "./components/RecorderPanel";
 import { SettingsPanel } from "./components/SettingsPanel";
 import { useAudioEngine } from "./hooks/useAudioEngine";
@@ -32,65 +31,53 @@ function loadRecordings(): CustomRecording[] {
   return [];
 }
 
+// Only two main views now — recorder dashboard + settings
 const NAV_ITEMS: { id: AppView; label: string; emoji: string }[] = [
-  { id: "demo", label: "Sound Demo", emoji: "🎵" },
-  { id: "recorder", label: "Record Audio", emoji: "🎙️" },
+  { id: "recorder", label: "Dashboard", emoji: "🎙️" },
   { id: "settings", label: "Settings", emoji: "⚙️" },
 ];
 
 export default function App() {
-  const [view, setView] = useState<AppView>("demo");
+  const [view, setView] = useState<AppView>("recorder");
   const [settings, setSettings] = useState<AudioSettings>(loadSettings);
   const [recordings, setRecordings] = useState<CustomRecording[]>(loadRecordings);
   const [saveFlash, setSaveFlash] = useState(false);
 
+  const { playEvent, previewRecording } = useAudioEngine({ settings, recordings });
+
   // Persist settings
   useEffect(() => {
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-    } catch {}
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }, [settings]);
 
-  // Persist recordings (only metadata + dataUrl)
+  // Persist recordings
   useEffect(() => {
-    try {
-      localStorage.setItem(RECORDINGS_KEY, JSON.stringify(recordings));
-    } catch {}
+    localStorage.setItem(RECORDINGS_KEY, JSON.stringify(recordings));
   }, [recordings]);
 
-  const { trigger, previewRecording, loadRecordingBuffer } = useAudioEngine(
-    settings,
-    recordings
-  );
-
-  const handleSettingsChange = useCallback((s: AudioSettings) => {
-    setSettings(s);
-  }, []);
-
   const handleSaveRecording = useCallback(
-    async (rec: CustomRecording) => {
-      setRecordings((prev) => [...prev, rec]);
-      await loadRecordingBuffer(rec.id, rec.dataUrl);
+    (recording: CustomRecording) => {
+      setRecordings((prev) => [recording, ...prev]);
       setSaveFlash(true);
       setTimeout(() => setSaveFlash(false), 2000);
-      // Navigate to settings so user can assign it
-      setTimeout(() => setView("settings"), 500);
     },
-    [loadRecordingBuffer]
+    []
   );
 
   const handleAssignRecording = useCallback(
     (event: SoundEvent, recordingId: string | null) => {
       setRecordings((prev) =>
-        prev.map((r) => ({
-          ...r,
-          assignedEvent:
-            r.id === recordingId
-              ? event
-              : r.assignedEvent === event
-              ? null
-              : r.assignedEvent,
-        }))
+        prev.map((r) => {
+          // Clear this event from any other recording
+          if (r.assignedEvent === event && r.id !== recordingId) {
+            return { ...r, assignedEvent: null };
+          }
+          // Assign to the selected recording
+          if (r.id === recordingId) {
+            return { ...r, assignedEvent: event };
+          }
+          return r;
+        })
       );
     },
     []
@@ -107,113 +94,87 @@ export default function App() {
     [previewRecording]
   );
 
-  const handleTriggerEvent = useCallback(
-    (event: SoundEvent) => {
-      trigger(event);
-    },
-    [trigger]
-  );
-
-  // Sidebar nav
+  // ── Sidebar nav items ──
   const sidebarNav = (
-    <div className="flex flex-col gap-1 py-2">
-      {NAV_ITEMS.map((item) => (
-        <button
-          key={item.id}
-          onClick={() => setView(item.id)}
-          className="flex items-center gap-3 px-3 py-2.5 rounded-[0.75rem] text-sm font-medium text-left transition-all w-full"
-          style={{
-            background:
-              view === item.id
-                ? "color-mix(in srgb, var(--accent) 15%, transparent)"
-                : "transparent",
-            color: view === item.id ? "var(--accent)" : "var(--ink)",
-          }}
-        >
-          <span className="text-lg">{item.emoji}</span>
-          {item.label}
-        </button>
-      ))}
-
-      {/* Stats */}
-      <div
-        className="mt-4 rounded-[0.75rem] p-3 flex flex-col gap-2"
-        style={{ background: "var(--line)", fontSize: 12 }}
-      >
-        <div className="flex items-center justify-between" style={{ color: "var(--muted)" }}>
-          <span>Sound effects</span>
-          <span
-            className="font-semibold"
-            style={{ color: settings.enabled ? "var(--success)" : "var(--danger)" }}
+    <nav className="flex flex-col gap-1">
+      {NAV_ITEMS.map((item) => {
+        const active = view === item.id;
+        return (
+          <button
+            key={item.id}
+            onClick={() => setView(item.id)}
+            className="flex items-center gap-3 px-4 py-2.5 rounded-[0.75rem] text-sm font-semibold text-left w-full transition-all"
+            style={{
+              background: active ? "var(--accent)" : "transparent",
+              color: active ? "#fff" : "var(--ink)",
+            }}
           >
-            {settings.enabled ? "ON" : "OFF"}
-          </span>
-        </div>
-        <div className="flex items-center justify-between" style={{ color: "var(--muted)" }}>
-          <span>Volume</span>
-          <span className="font-semibold" style={{ color: "var(--ink)" }}>
-            {settings.volume}%
-          </span>
-        </div>
-        <div className="flex items-center justify-between" style={{ color: "var(--muted)" }}>
-          <span>My recordings</span>
-          <span className="font-semibold" style={{ color: "var(--ink)" }}>
-            {recordings.length}
-          </span>
-        </div>
-      </div>
+            <span className="text-base">{item.emoji}</span>
+            {item.label}
+          </button>
+        );
+      })}
 
-      {/* Save flash */}
+      {/* Save flash indicator */}
       {saveFlash && (
         <div
-          className="mt-2 rounded-[0.75rem] p-2 text-xs text-center font-medium"
-          style={{
-            background: "color-mix(in srgb, var(--success) 15%, transparent)",
-            color: "var(--success)",
-          }}
+          className="mt-2 px-4 py-2 rounded-[0.75rem] text-xs font-semibold text-center animate-pulse"
+          style={{ background: "#166534", color: "#bbf7d0" }}
         >
-          ✅ Recording saved!
+          ✅ Clip saved!
         </div>
       )}
-    </div>
+    </nav>
   );
 
-  // Bottom dock for mobile
-  const bottomDock = NAV_ITEMS.map((item) => (
-    <button
-      key={item.id}
-      onClick={() => setView(item.id)}
-      className="flex flex-col items-center gap-0.5 px-3 py-1 transition-all"
-      style={{ color: view === item.id ? "var(--accent)" : "var(--muted)" }}
-    >
-      <span className="text-xl">{item.emoji}</span>
-      <span className="text-[10px] font-medium">{item.label}</span>
-    </button>
-  ));
-
-  const mainContent = (
-    <div className="p-6 md:p-8 max-w-2xl mx-auto">
-      {view === "demo" && (
-        <DemoPanel onTrigger={handleTriggerEvent} settings={settings} />
-      )}
-      {view === "recorder" && <RecorderPanel onSave={handleSaveRecording} />}
-      {view === "settings" && (
-        <SettingsPanel
-          settings={settings}
-          onSettingsChange={handleSettingsChange}
-          recordings={recordings}
-          onAssignRecording={handleAssignRecording}
-          onDeleteRecording={handleDeleteRecording}
-          onPreviewRecording={handlePreviewRecording}
-          onTriggerEvent={handleTriggerEvent}
-        />
-      )}
-    </div>
-  );
+  // ── Bottom dock for mobile ──
+  const bottomDock = NAV_ITEMS.map((item) => {
+    const active = view === item.id;
+    return (
+      <button
+        key={item.id}
+        onClick={() => setView(item.id)}
+        className="flex flex-col items-center gap-1 px-4 py-2 rounded-[0.75rem] text-xs font-semibold transition-all"
+        style={{
+          background: active ? "var(--accent)" : "transparent",
+          color: active ? "#fff" : "var(--muted)",
+        }}
+      >
+        <span className="text-lg">{item.emoji}</span>
+        {item.label}
+      </button>
+    );
+  });
 
   return (
-    <Shell sidebar={sidebarNav} bottomDock={bottomDock}>
-      {mainContent}
+    <Shell
+      appName="SoundBoard"
+      sidebarContent={sidebarNav}
+      bottomDockContent={bottomDock}
+    >
+      <div className="p-6 md:p-8 max-w-4xl mx-auto w-full">
+        {view === "recorder" && (
+          <RecorderPanel
+            recordings={recordings}
+            onSave={handleSaveRecording}
+            onAssignRecording={handleAssignRecording}
+            onDeleteRecording={handleDeleteRecording}
+            onPreviewRecording={handlePreviewRecording}
+          />
+        )}
+
+        {view === "settings" && (
+          <SettingsPanel
+            settings={settings}
+            onSettingsChange={setSettings}
+            recordings={recordings}
+            onAssignRecording={handleAssignRecording}
+            onDeleteRecording={handleDeleteRecording}
+            onPreviewRecording={handlePreviewRecording}
+            onTriggerEvent={playEvent}
+          />
+        )}
+      </div>
     </Shell>
   );
 }
