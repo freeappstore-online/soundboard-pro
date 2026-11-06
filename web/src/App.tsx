@@ -43,7 +43,7 @@ export default function App() {
   const [recordings, setRecordings] = useState<CustomRecording[]>(loadRecordings);
   const [saveFlash, setSaveFlash] = useState(false);
 
-  const { playEvent, previewRecording } = useAudioEngine({ settings, recordings });
+  const { trigger: playEvent, previewRecording } = useAudioEngine(settings, recordings);
 
   // Persist settings
   useEffect(() => {
@@ -147,11 +147,7 @@ export default function App() {
   });
 
   return (
-    <Shell
-      appName="SoundBoard"
-      sidebarContent={sidebarNav}
-      bottomDockContent={bottomDock}
-    >
+    <Shell sidebar={sidebarNav} bottomDock={bottomDock}>
       <div className="p-6 md:p-8 max-w-4xl mx-auto w-full">
         {view === "recorder" && (
           <RecorderPanel
