@@ -50,18 +50,27 @@ export default function App() {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
   }, [settings]);
 
-  // Persist recordings
+  // Persist recordings (a full storage must not take the app down)
   useEffect(() => {
-    localStorage.setItem(RECORDINGS_KEY, JSON.stringify(recordings));
+    try {
+      localStorage.setItem(RECORDINGS_KEY, JSON.stringify(recordings));
+    } catch {}
   }, [recordings]);
 
   const handleSaveRecording = useCallback(
     (recording: CustomRecording) => {
-      setRecordings((prev) => [recording, ...prev]);
+      const next = [recording, ...recordings];
+      try {
+        localStorage.setItem(RECORDINGS_KEY, JSON.stringify(next));
+      } catch {
+        alert("Storage is full, so this recording can't be saved. Delete some recordings and try again.");
+        return;
+      }
+      setRecordings(next);
       setSaveFlash(true);
       setTimeout(() => setSaveFlash(false), 2000);
     },
-    []
+    [recordings]
   );
 
   const handleAssignRecording = useCallback(
